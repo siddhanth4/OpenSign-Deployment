@@ -2434,7 +2434,10 @@ function SignYourSelf() {
       signature: suffixbase64
     }).toString();
 
-    const BACKEND_URL = "http://localhost:8080";
+   
+    const BACKEND_URL = import.meta.env.REACT_APP_SERVERURL 
+      ? import.meta.env.REACT_APP_SERVERURL.replace('/app', '') 
+      : "https://opensign-deployment.onrender.com";
 
     const res = await fetch(
       `${BACKEND_URL}/api/signPdf?${queryParams}`,
