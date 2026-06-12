@@ -2303,8 +2303,8 @@ function SignYourSelf() {
         isCustomCompletionMail = true;
       }
     }
-    // below for loop is used to get first signature of user to send to signpdf
-    // for adding it in completion certificate
+
+    // Get first signature of user to send to signpdf for adding it in completion certificate
     let getSignature;
     for (let item of xyPosition) {
       if (!getSignature) {
@@ -2328,18 +2328,13 @@ function SignYourSelf() {
       return;
     }
 
-    // Signatures can be stored in three places depending on how the user signed:
-    //   1. widget.SignUrl          – drawn / uploaded signature set via drag-drop flow
-    //   2. widget.options.response – typed signature or value set through WidgetsValueModal
-    //   3. widget.options.defaultValue – pre-filled default signature
     let base64Sign =
       getSignature.SignUrl ||
       getSignature?.options?.response ||
       getSignature?.options?.defaultValue ||
       "";
 
-    // Guard: if we still have no signature data, show a clear error instead of
-    // sending undefined to the server and getting a cryptic 400 back
+    // Guard: if we still have no signature data, show a clear error
     if (!base64Sign) {
       setIsUiLoading(false);
       setIsAlert({
@@ -2350,7 +2345,7 @@ function SignYourSelf() {
       return;
     }
 
-    // If it is a remote URL (saved default signature), fetch it as base64 first
+    // If it is a remote URL, fetch it as base64 first
     const isUrl =
       typeof base64Sign === "string" && base64Sign.startsWith("https");
     if (isUrl) {
@@ -2364,7 +2359,6 @@ function SignYourSelf() {
       }
     }
 
-    // Guard: fetchImageBase64 may return null/undefined on network error
     if (!base64Sign) {
       setIsUiLoading(false);
       setIsAlert({
@@ -2378,7 +2372,6 @@ function SignYourSelf() {
     // Normalise to a clean base64 PNG at 300×120 px
     const imagebase64 = await changeImageWH(base64Sign);
 
-    // Guard: changeImageWH can return null if the canvas operation fails
     if (!imagebase64) {
       setIsUiLoading(false);
       setIsAlert({
@@ -2389,13 +2382,11 @@ function SignYourSelf() {
       return;
     }
 
-    // Strip the data-URL prefix (e.g. "data:image/png;base64,") so the
-    // server receives only the raw base64 string that Buffer.from() expects
+    // Strip the data-URL prefix
     const suffixbase64 = imagebase64.includes(",")
       ? imagebase64.split(",").pop()
       : imagebase64;
 
-    // Guard: pdfFile must also be defined before calling the cloud function
     if (!base64Url) {
       setIsUiLoading(false);
       setIsAlert({
@@ -2417,30 +2408,34 @@ function SignYourSelf() {
       return new Blob([buffer], { type: mime });
     };
 
-    // Prepare FormData with the PDF file and other parameters
+    // Prepare FormData with the PDF file
     const pdfBlob = base64ToBlob(base64Url, "application/pdf");
     const formData = new FormData();
     formData.append("pdfFile", pdfBlob, "document.pdf");
 
-    // Additional metadata sent as query parameters (or could be form fields)
+    // Extract User and Session details
     const currentUser = Parse.User.current();
     const userId = currentUser?.id;
     const sessionToken = currentUser?.getSessionToken?.();
 
-    const queryParams = new URLSearchParams({
-      docId: documentId,
-      userId: userId || "",
-      isCustomCompletionMail: isCustomCompletionMail,
-      signature: suffixbase64
-    }).toString();
+    // ==========================================
+    // UPDATED BLOCK: SAFE MULTIPART BODY PATH
+    // ==========================================
+    
+    // Append parameters to the multipart formData body instead of stringifying into the URL
+    formData.append("docId", documentId);
+    formData.append("userId", userId || "");
+    formData.append("isCustomCompletionMail", isCustomCompletionMail);
+    formData.append("signature", suffixbase64);
 
-   
+    // Dynamically resolve target server base URL
     const BACKEND_URL = import.meta.env.REACT_APP_SERVERURL 
       ? import.meta.env.REACT_APP_SERVERURL.replace('/app', '') 
       : "https://opensign-deployment.onrender.com";
 
+    // Call the endpoint cleanly without URL query interpolation
     const res = await fetch(
-      `${BACKEND_URL}/api/signPdf?${queryParams}`,
+      `${BACKEND_URL}/api/signPdf`,
       {
         method: "POST",
         body: formData,
@@ -2449,6 +2444,7 @@ function SignYourSelf() {
         }
       }
     );
+
     const resSignPdf = await res.json();
     if (resSignPdf && resSignPdf.status === "success" && resSignPdf.data) {
       setPdfUrl(resSignPdf.data);
